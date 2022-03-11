@@ -1,0 +1,279 @@
+#lang racket                                             ;ETAPA 3
+(require racket/match)
+(require "queue.rkt")
+
+(provide (all-defined-out))
+
+(define ITEMS 5)
+
+;; ATENȚIE: Pentru această etapă a temei este necesar să implementați
+;;          întâi TDA-ul queue în fișierul queue.rkt.
+;; Reveniți la sarcinile din acest fișier după ce ați implementat tipul 
+;; queue și ați verificat implementarea folosind checker-ul.
+
+
+; Structura counter nu se modifică.
+; Ceea ce se modifică este implementarea câmpului queue:
+; - în loc de listă, acesta va fi o coadă (o structură de tip queue)
+; - acest lucru nu este vizibil în definiția structurii counter,
+;   ci în implementarea operațiilor acestui tip de date (tipul counter)
+(define-struct counter (index tt et queue) #:transparent)
+
+
+; TODO
+; Actualizați funcțiile de mai jos astfel încât ele să folosească
+; o structură de tip queue pentru reprezentarea cozii de persoane.
+; Elementele cozii continuă să fie perechi (nume . nr_produse).
+; Este esențial să respectați "bariera de abstractizare", adică să
+; operați cu coada doar folosind interfața acestui TDA:
+; - empty-queue
+; - queue-empty?
+; - enqueue
+; - dequeue
+; - top
+; Obs: Doar câteva funcții vor necesita actualizări.
+(define (empty-counter index)           ; testată de checker
+  empty-counter (make-counter index 0 0 (queue '() '() 0 0 )))
+
+
+(define (update f counters index)
+  (if (null? counters) '()
+  (update_helper f counters index '())))
+
+(define (update_helper f counters index acc)
+  (cond((null? counters) acc)
+     ((equal? (counter-index (car counters)) index) (update_helper f (cdr counters) index (append acc (list (aplicare_f f counters index))) ))
+     (else
+     (update_helper f (cdr counters) index (append acc  (list (car counters)))))))
+
+(define (aplicare_f f counters index)
+   (f (car (filter (lambda (x) (equal? (counter-index x) index)) counters))))
+
+(define (tt+ min)     ;forma ((tt+ min) C)
+  (lambda (x)               
+      (match x
+    [(counter index tt et queue)
+     x (struct-copy counter x [tt (+ (counter-tt x) min)])])))
+
+(define (et+ min)
+ (lambda (x)               
+      (match x
+    [(counter index tt et queue)
+     x (struct-copy counter x [et (+ (counter-et x) min)])])))
+
+(define (add-to-counter name items)     ; testată de checker
+  (λ (C)                                ; nu modificați felul în care funcția își primește argumentele
+    (if(and (null? (queue-left (counter-queue C))) (null? (queue-right (counter-queue C)))) (update_var_1 C name items)
+     (update_var_2 C name items))))
+     
+(define (update_var_1 C name n-items)
+  C (struct-copy counter C [tt (+ (counter-tt C) n-items)] [et (+ (counter-et C) n-items)] [queue (enqueue (cons name n-items) (counter-queue C))] ))
+
+  (define (update_var_2 C name n-items)
+          C (struct-copy counter C [tt (+ (counter-tt C) n-items)] [queue (enqueue (cons name n-items)(counter-queue C)) ] ))
+
+
+(define (gen-min L elem-min f)
+ (cond ((null? L) elem-min)
+        ((< (f (car L)) elem-min) (gen-min (cdr L) (f (car L)) f))
+        (else (gen-min (cdr L) elem-min f))))
+
+(define (newmin-gen x counters f)     ; returnare pereche (index tt/et) -> x=tt/et min
+  (if(equal? (f (car counters)) x)  (cons (counter-index (car counters)) x)
+     (newmin-gen x (cdr counters) f)))
+
+; folosind funcția de mai sus
+(define (min-tt counters)
+  (newmin-gen (gen-min (cdr counters) (counter-tt (car counters )) counter-tt) counters counter-tt))
+
+; folosind funcția de mai sus  
+(define (min-et  counters)
+  (newmin-gen (gen-min (cdr counters) (counter-et (car counters )) counter-et) counters counter-et))
+
+(define (remove-first-from-counter C)   ; testată de checker
+  (counter (counter-index C)
+           (calculare-tt (make-a-list (queue-left (dequeue (counter-queue C))) (queue-right (dequeue (counter-queue C)))) 0)
+           (calculare-et (make-a-list (queue-left (dequeue (counter-queue C))) (queue-right (dequeue (counter-queue C)))) 0)
+           (dequeue (counter-queue C))))
+
+(define (make-a-list ql qr)
+  (cond ((and (null? ql) (null? qr)) '())
+        ((null? ql) (reverse qr))
+        ((null? qr) ql)
+        ((and (> (length ql) 0) (> (length ql) 0)) (list ql qr))))
+  
+
+(define (calculare-tt q sum)
+  (if(null?  q) sum
+     (calculare-tt (cdr q) (+ sum (cdr (car q))))))
+
+(define (calculare-et q sum)
+(if(null? q) sum
+   (cdr (car q))))
+
+; TODO
+; Implementați o funcție care calculează starea unei case după un număr dat de minute.
+; Funcția presupune, fără să verifice, că în acest timp nu a ieșit nimeni din coadă, 
+; deci va avea efect doar asupra câmpurilor tt și et.
+; (cu alte cuvinte, este responsabilitatea utilizatorului să nu apeleze această funcție
+; cu minutes > timpul până la ieșirea primului client din coadă)
+; Atenție: casele fără clienți nu trebuie să ajungă la timpi negativi!
+(define (pass-time-through-counter minutes)
+  (λ (C)
+    (if(< (counter-tt C) minutes) (empty-counter (counter-index C))
+       (counter (counter-index C) (- (counter-tt C) minutes) (- (counter-et C) minutes) (counter-queue C)))))
+  
+
+; TODO
+; Implementați funcția care simulează fluxul clienților pe la case.
+; ATENȚIE: Față de etapa 2, apar modificări în:
+; - formatul listei de cereri (parametrul requests)
+; - formatul rezultatului funcției (explicat mai jos)
+; requests conține 4 tipuri de cereri (3 moștenite din etapa 2 plus una nouă):
+;   - (<name> <n-items>) - persoana <name> trebuie așezată la coadă la o casă            (ca înainte)
+;   - (delay <index> <minutes>) - casa <index> este întârziată cu <minutes> minute       (ca înainte)
+;   - (ensure <average>) - cât timp tt-ul mediu al tuturor caselor este mai mare decât
+;                          <average>, se adaugă case fără restricții (case slow)         (ca înainte)
+;   - <x> - trec <x> minute de la ultima cerere, iar starea caselor se actualizează
+;           corespunzător (cu efect asupra câmpurilor tt, et, queue)                     (   NOU!   )
+; Obs: Au dispărut cererile de tip remove-first, pentru a lăsa loc unui mecanism mai 
+; sofisticat de a scoate clienții din coadă (pe măsură ce trece timpul).
+; Sistemul trebuie să proceseze cele 4 tipuri de cereri în ordine, astfel:
+; - persoanele vor fi distribuite la casele cu tt minim (dintre casele la care au voie)  (ca înainte)
+; - când o casă suferă o întârziere, tt-ul și et-ul ei cresc (chiar dacă nu are clienți) (ca înainte)
+; - tt-ul mediu (ttmed) se calculează pentru toate casele (și cele fast, și cele slow), 
+;   iar la nevoie veți adăuga case slow una câte una, până când ttmed <= <average>       (ca înainte)
+; - când timpul prin sistem avansează cu <x> minute, tt-ul, et-ul și queue-ul tuturor 
+;   caselor se actualizează pentru a reflecta trecerea timpului; dacă unul sau mai mulți 
+;   clienți termină de stat la coadă, ieșirile lor sunt contorizate în ordine cronologică.
+; Rezultatul funcției serve va fi o pereche cu punct între:
+; - lista sortată cronologic a clienților care au părăsit supermarketul
+;   - fiecare element din listă va avea forma (index_casă . nume)
+;   - dacă mai mulți clienți ies simultan, sortați-i crescător după indexul casei
+; - lista caselor în starea finală (ca rezultatul din etapele 1 și 2)
+; Obs: Pentru a contoriza ieșirile din cozi, puteți să lucrați într-o funcție ajutătoare
+; (cu un parametru în plus față de funcția serve), pe care serve doar o apelează.
+(define (serve requests fast-counters slow-counters)
+  (serve2 requests fast-counters slow-counters '()))
+
+(define (serve2 requests fast-counters slow-counters lista-iesiri)
+  (if (null? requests)
+      (append (list lista-iesiri) (append fast-counters slow-counters))
+      (match (car requests)
+        [(list 'ensure average) 0];(my_ensure average (append fast-counters slow-counters) fast-counters slow-counters requests lista-iesiri)]
+        [(list name n) (adaugare_client (car requests) requests fast-counters slow-counters (find_counter_type (car requests) n slow-counters fast-counters) name n lista-iesiri)]       
+        [(list 'delay index minutes) 0];  (my_delay requests index minutes (ftype index slow-counters fast-counters) (append fast-counters slow-counters) fast-counters slow-counters lista-iesiri )]
+        [x (actualizare_case requests x (append fast-counters slow-counters) fast-counters slow-counters lista-iesiri)])))
+        
+;trec minute
+(define (actualizare_case requests min L fastc slowc l)
+  (serve2 (cdr requests) (help_lists fastc '() min) (help_lists slowc '() min) l))
+
+(define (help_lists l acc minutes)
+  (if(null? l) acc
+     (help_lists (cdr l) (append acc (list ((pass-time-through-counter minutes) (car l)))) minutes) ))
+
+;(define (reface_lista l acc minutes lista_iesiri)
+  ;(if(null? l) acc
+  ;   (reface_lista (cdr l) (append acc (list (refacere-C minutes (car l) lista_iesiri) )) minutes)))
+
+;(define (refacere-C min C l)
+ ; (cond ((null? (top (counter-queue C))) C) 
+     ;  ((>= min (cadr (top (counter-queue C)))) (refacere-C (- min  (cadr (top (counter-queue C)))) (remove-first-from-counter C) l))
+      ; ((< min (cadr (top (counter-queue C))))((pass-time-through-counter min) C))))
+
+
+
+
+
+
+
+                                                                                                                                           
+     
+;add:
+(define (adaugare_client pereche requests fast-counters slow-counters counter_type name n-items l)
+  (if(equal? counter_type 'slow) (serve2 (cdr requests) fast-counters (modify_general pereche slow-counters name n-items) l)
+     (serve2 (cdr requests) (modify_general pereche fast-counters name n-items) slow-counters l)))
+
+(define (find_counter_type pereche n-items slow-counters fast-counters)
+  (if(> n-items 5) 'slow
+     (find_counter_to_use pereche (append fast-counters slow-counters) slow-counters fast-counters)))
+
+(define (find_counter_to_use pereche L slow-counters fast-counters)
+  (if(null?  (filter (lambda (x) (equal? (counter-index x) (car(min-tt L))) ) slow-counters)) 'fast
+     'slow))
+
+(define (modify_general pereche L name n-items)
+  (help_modify L name n-items '() 0))
+
+(define (help_modify L name n-items acc found)
+  (cond((null? L) acc)
+     ((and (= found 0) (equal? (counter-index (car L)) (car (min-tt L)))) (help_modify (cdr L) name n-items (append acc (list ((add-to-counter name n-items) (car L)))) 1))
+     (else (help_modify (cdr L) name n-items (append acc (list (car L))) found))))
+
+
+
+
+
+
+
+
+
+
+;ensure:
+(define (my_ensure average L fastc slowc requests l)
+  (if(> average (calculate_average_tt (sum_tt L 0) (length L)) ) (serve2 (cdr requests) fastc slowc l)
+     (serve2 (cdr requests) fastc (modify_slowc average slowc (length L) (sum_tt L 0) 0) l)))
+
+(define (sum_tt L sum)
+  (if(null? L) sum
+     (sum_tt (cdr L) (+ sum (counter-tt (car L))))))
+
+(define (calculate_average_tt suma lung)
+  (/ suma lung))
+
+(define (modify_slowc average slowc lung suma acc)
+  (if(>= average (/ suma lung)) (adaugare_acc_counters slowc acc (find_last_index slowc))
+     (modify_slowc average slowc (+ lung 1) suma (+ acc 1))))
+
+(define (adaugare_acc_counters slowc acc index)
+  (if(equal? acc 0) slowc
+     (adaugare_acc_counters (append slowc (list (counter (+ index 1) 0 0 '()))) (- acc 1) (+ index 1))))
+
+(define (find_last_index slowc)
+  (if (null? slowc) 0
+       (counter-index (last slowc))))
+
+;verificare
+;(sum_tt (list (counter 1 1 1 '()) (counter 2 100 1 '()) (counter 4 1000 1 '())) 0)
+;(find_last_index (list (counter 1 1 1 '()) (counter 2 100 1 '()) (counter 24 1000 1 '())))
+;(length (list (counter 1 1 1 '()) (counter 2 100 1 '()) (counter 24 1000 1 '())))
+;(calculate_average_tt 100 11)
+;(adaugare_acc_counters (list (counter 1 1 1 '()) (counter 2 100 1 '()) (counter 111 1000 1 '())) 4 111)
+
+
+;delay
+(define (my_delay requests index minutes type L fast-counters slow-counters l)
+  (if(equal? type 'slow) (serve2 (cdr requests) fast-counters (update (et_tt+ minutes) slow-counters index) l)
+       (serve2 (cdr requests) (update (et_tt+ minutes)  fast-counters index) slow-counters l)))
+
+ (define (et_tt+ min)
+ (lambda (x)               
+      (match x
+    [(counter index tt et queue)
+     x (struct-copy counter x [et (+ (counter-et x) min)] [tt (+ (counter-tt x) min)])])))
+
+(define (ftype index slowc fastc)
+  (cond((null? slowc) 'fast)
+       ((null?  (filter (lambda (x) (equal? (counter-index  x) index)  ) slowc)) 'fast)
+       ((null? fastc) 'slow)
+       ((equal? 1 1) 'slow)))
+
+
+
+                                                   
+
+(define (find_counter_by_index index L)    ; returneaza casa ce are indexul respectiv
+  (if(equal? index (counter-index (car L))) (car L)
+     (find_counter_by_index index (cdr L))))
+        
